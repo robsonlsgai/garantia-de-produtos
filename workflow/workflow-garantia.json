@@ -1,0 +1,458 @@
+{
+  "name": "Garantia - alerta de vencimento",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * *"
+            }
+          ]
+        }
+      },
+      "name": "Todo dia às 8h",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "COLE_AQUI_O_ID_DA_PLANILHA"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Produtos"
+        },
+        "options": {}
+      },
+      "name": "Ler produtos",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Calcula a data final da garantia e decide qual ação tomar em cada linha.\n// data_compra deve estar no formato dd/mm/aaaa.\nconst hoje = new Date();\nhoje.setHours(0, 0, 0, 0);\nconst emailValido = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;\nconst saida = [];\n\n$input.all().forEach((item, index) => {\n  const r = item.json;\n  const email = String(r.email || '').trim();\n\n  // Regra: ignorar linhas sem e-mail válido ou sem data de compra\n  if (!emailValido.test(email) || !r.data_compra) return;\n  // Regra: garantias já marcadas como vencidas não geram nada\n  if (r.status === 'vencida') return;\n\n  const [d, m, a] = String(r.data_compra).split('/').map(Number);\n  if (!d || !m || !a) return;\n\n  const fim = new Date(a, m - 1 + Number(r.meses_garantia || 0), d);\n  const dias = Math.round((fim - hoje) / 86400000);\n\n  let acao = null;\n  if (dias < 0) acao = 'vencida';\n  else if (dias <= 7 && r.aviso_7 !== 'enviado') acao = 'aviso_7';\n  else if (dias <= 30 && dias > 7 && r.aviso_30 !== 'enviado') acao = 'aviso_30';\n  if (!acao) return;\n\n  saida.push({\n    json: {\n      ...r,\n      email,\n      acao,\n      dias_restantes: dias,\n      data_final: fim.toLocaleDateString('pt-BR'),\n      data_final_iso: fim.toISOString().slice(0, 10),\n    },\n    pairedItem: { item: index },\n  });\n});\n\nreturn saida;"
+      },
+      "name": "Calcular garantia",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.acao }}",
+                    "rightValue": "aviso_30",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "aviso_30"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.acao }}",
+                    "rightValue": "aviso_7",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "aviso_7"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.acao }}",
+                    "rightValue": "vencida",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "vencida"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Qual aviso?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        660,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.email }}",
+        "subject": "=Sua garantia de {{ $json.produto }} vence em 30 dias",
+        "emailType": "text",
+        "message": "=Olá!\n\nA garantia do produto {{ $json.produto }}, comprado na loja {{ $json.loja }}, termina em {{ $json.data_final }} (faltam {{ $json.dias_restantes }} dias).\n\nSe o produto apresentar algum problema, procure a loja ou o fabricante antes dessa data.\n\nEquipe Garantia",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "name": "E-mail 30 dias",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        900,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "calendar": {
+          "__rl": true,
+          "mode": "id",
+          "value": "primary"
+        },
+        "start": "={{ $('Calcular garantia').item.json.data_final_iso }}T09:00:00",
+        "end": "={{ $('Calcular garantia').item.json.data_final_iso }}T09:30:00",
+        "additionalFields": {
+          "summary": "=Fim da garantia: {{ $('Calcular garantia').item.json.produto }}",
+          "description": "=Produto comprado na loja {{ $('Calcular garantia').item.json.loja }}.",
+          "attendees": [
+            "={{ $('Calcular garantia').item.json.email }}"
+          ]
+        }
+      },
+      "name": "Evento no Calendar",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.2,
+      "position": [
+        1120,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "COLE_AQUI_O_ID_DA_PLANILHA"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Produtos"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "row_number": "={{ $('Calcular garantia').item.json.row_number }}",
+            "aviso_30": "enviado"
+          },
+          "matchingColumns": [
+            "row_number"
+          ],
+          "schema": [
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "aviso_30",
+              "displayName": "aviso_30",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Marcar aviso 30",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1340,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.email }}",
+        "subject": "=Atenção: sua garantia de {{ $json.produto }} vence em 7 dias",
+        "emailType": "text",
+        "message": "=Olá!\n\nA garantia do produto {{ $json.produto }}, comprado na loja {{ $json.loja }}, termina em {{ $json.data_final }} (faltam {{ $json.dias_restantes }} dias).\n\nSe o produto apresentar algum problema, procure a loja ou o fabricante antes dessa data.\n\nEquipe Garantia",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "name": "E-mail 7 dias",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        900,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "COLE_AQUI_O_ID_DA_PLANILHA"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Produtos"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "row_number": "={{ $('Calcular garantia').item.json.row_number }}",
+            "aviso_7": "enviado"
+          },
+          "matchingColumns": [
+            "row_number"
+          ],
+          "schema": [
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "aviso_7",
+              "displayName": "aviso_7",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Marcar aviso 7",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1120,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "COLE_AQUI_O_ID_DA_PLANILHA"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Produtos"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "row_number": "={{ $json.row_number }}",
+            "status": "vencida"
+          },
+          "matchingColumns": [
+            "row_number"
+          ],
+          "schema": [
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Marcar vencida",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        900,
+        500
+      ]
+    }
+  ],
+  "connections": {
+    "Todo dia às 8h": {
+      "main": [
+        [
+          {
+            "node": "Ler produtos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ler produtos": {
+      "main": [
+        [
+          {
+            "node": "Calcular garantia",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calcular garantia": {
+      "main": [
+        [
+          {
+            "node": "Qual aviso?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Qual aviso?": {
+      "main": [
+        [
+          {
+            "node": "E-mail 30 dias",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "E-mail 7 dias",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Marcar vencida",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "E-mail 30 dias": {
+      "main": [
+        [
+          {
+            "node": "Evento no Calendar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evento no Calendar": {
+      "main": [
+        [
+          {
+            "node": "Marcar aviso 30",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "E-mail 7 dias": {
+      "main": [
+        [
+          {
+            "node": "Marcar aviso 7",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Sao_Paulo"
+  },
+  "pinData": {}
+}
