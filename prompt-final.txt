@@ -1,0 +1,17 @@
+Atue como um especialista em N8N.
+Crie uma automação para avisar quando a garantia de um produto estiver perto de vencer.
+Público:
+Pessoas que cadastraram seus produtos em uma planilha de controle de garantias.
+Ferramentas envolvidas:
+Google Sheets, Gmail e Google Calendar.
+Fluxo:
+1. Todos os dias às 8h, ler a planilha de produtos (colunas: produto, loja, email, data_compra, meses_garantia, aviso_30, aviso_7, status).
+2. Calcular a data final da garantia (data_compra + meses_garantia) e os dias restantes.
+3. Quando faltarem 30 ou 7 dias, enviar um e-mail com produto, loja e data final.
+4. Criar um evento no Google Calendar na data final da garantia (apenas no aviso de 30 dias).
+5. Atualizar a planilha marcando aviso_30 ou aviso_7 como "enviado".
+Regras:
+- Ignorar linhas sem e-mail válido ou sem data de compra.
+- Não repetir avisos já marcados como "enviado".
+- Garantias já vencidas recebem status "vencida" e não geram e-mail.
+Explique quais nós do N8N devem ser utilizados e a lógica de funcionamento do workflow.

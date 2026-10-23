@@ -97,6 +97,16 @@ Regras:
 Explique quais nós do N8N devem ser utilizados e a lógica de funcionamento do workflow.
 ```
 
+### 🔍 Revisão antes de entregar
+
+| Pergunta da DIO | ✔️ | Onde está no prompt |
+|---|:---:|---|
+| 🎯 O objetivo da automação está claro? | ✅ | "Crie uma automação para avisar quando a garantia de um produto estiver perto de vencer." |
+| 🔢 As etapas estão em ordem? | ✅ | Fluxo numerado de 1 a 5, da leitura da planilha até a atualização final |
+| 🚦 As regras e restrições foram informadas? | ✅ | E-mail inválido, aviso repetido e garantia vencida |
+
+📄 Prefere o prompt em texto puro? Ele também está em [`prompt-final.txt`](prompt-final.txt).
+
 ---
 
 ## 🎁 Bônus: o workflow pronto para usar!
